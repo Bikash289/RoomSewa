@@ -2,39 +2,49 @@
 require 'includes/header.php';
 
 // Check authentication
-if (!isset($_SESSION['user_id']) {
+if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit();
 }
 
+$user_id = $_SESSION['user_id'];
+
 // Get all notifications for the user
 $stmt = $conn->prepare("SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC");
-$stmt->bind_param("i", $_SESSION['user_id']);
+$stmt->bind_param("i", $user_id);
 $stmt->execute();
 $all_notifications = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
-// Mark all as read
-$conn->query("UPDATE notifications SET is_read = 1 WHERE user_id = {$_SESSION['user_id']}");
+// Mark all as read (safer prepared statement)
+$update = $conn->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ?");
+$update->bind_param("i", $user_id);
+$update->execute();
 
-// Count unread (should be 0 after marking all as read)
-$unread_count = $conn->query("SELECT COUNT(*) as count FROM notifications WHERE user_id = {$_SESSION['user_id']} AND is_read = 0")->fetch_assoc()['count'];
+// Count unread notifications (should now be 0)
+$count_stmt = $conn->prepare("SELECT COUNT(*) AS count FROM notifications WHERE user_id = ? AND is_read = 0");
+$count_stmt->bind_param("i", $user_id);
+$count_stmt->execute();
+$unread_count = $count_stmt->get_result()->fetch_assoc()['count'];
 ?>
 
 <div class="notifications-page">
     <div class="container">
         <h1>Your Notifications</h1>
-        
+
         <div class="notifications-list">
-            <?php if (count($all_notifications) > 0): ?>
+            <?php if (!empty($all_notifications)): ?>
                 <?php foreach ($all_notifications as $notification): ?>
                     <div class="notification-item <?= $notification['is_read'] ? 'read' : 'unread' ?>">
                         <div class="notification-content">
                             <p><?= htmlspecialchars($notification['message']) ?></p>
                             <small><?= date('M d, Y h:i A', strtotime($notification['created_at'])) ?></small>
                         </div>
-                        <a href="<?= htmlspecialchars($notification['link']) ?>" class="notification-link">
-                            <i class="fas fa-arrow-right"></i>
-                        </a>
+
+                        <?php if (!empty($notification['link'])): ?>
+                            <a href="<?= htmlspecialchars($notification['link']) ?>" class="notification-link">
+                                <i class="fas fa-arrow-right"></i>
+                            </a>
+                        <?php endif; ?>
                     </div>
                 <?php endforeach; ?>
             <?php else: ?>
@@ -66,7 +76,7 @@ $unread_count = $conn->query("SELECT COUNT(*) as count FROM notifications WHERE 
     padding: 15px;
     border-bottom: 1px solid #eee;
     background: white;
-    transition: background 0.2s;
+    transition: background 0.2s ease-in-out;
 }
 
 .notification-item.unread {
@@ -74,7 +84,7 @@ $unread_count = $conn->query("SELECT COUNT(*) as count FROM notifications WHERE 
 }
 
 .notification-item:hover {
-    background: #f1f3f5;
+    background: #eef2f5;
 }
 
 .notification-content {
@@ -83,6 +93,7 @@ $unread_count = $conn->query("SELECT COUNT(*) as count FROM notifications WHERE 
 
 .notification-content p {
     margin: 0 0 5px 0;
+    font-weight: 500;
 }
 
 .notification-content small {
@@ -104,13 +115,12 @@ $unread_count = $conn->query("SELECT COUNT(*) as count FROM notifications WHERE 
 
 .no-notifications i {
     font-size: 2rem;
-    color: #ddd;
+    color: #ccc;
     margin-bottom: 10px;
 }
 
 .no-notifications p {
     color: #777;
-    margin: 0;
 }
 </style>
 
